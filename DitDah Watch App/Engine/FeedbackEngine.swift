@@ -19,6 +19,7 @@ final class FeedbackEngine {
     private(set) var playingCharacter: Character?
 
     private var playbackTask: Task<Void, Never>?
+    private var tailTapTask: Task<Void, Never>?
 
     init(preferences: Preferences) {
         self.preferences = preferences
@@ -50,12 +51,26 @@ final class FeedbackEngine {
 
     /// Fired when a press has been classified, so you feel what you just sent.
     ///
-    /// `.click` is a single crisp tap and `.start` is a longer buzz, which maps
-    /// about as closely onto dit and dah as the fixed haptic vocabulary allows —
-    /// watchOS gives no way to vary tap duration directly.
+    /// Both marks use `.click`, which is the one genuinely silent haptic. A dah
+    /// gets a second click shortly after so it still feels longer than a dit.
+    ///
+    /// This used to send `.start` for a dah. That is an *alert* haptic: watchOS
+    /// pairs it with an audible chime, so every dah rang a bell over the top of
+    /// the sidetone. There is no variable-duration haptic on watchOS — a second
+    /// tap is the only way to make a dah feel longer without making noise.
     func tap(for element: MorseElement) {
         guard preferences.hapticsEnabled else { return }
-        WKInterfaceDevice.current().play(element == .dit ? .click : .start)
+        WKInterfaceDevice.current().play(.click)
+        guard element == .dah else { return }
+
+        tailTapTask?.cancel()
+        tailTapTask = Task {
+            // Comfortably shorter than a dit at the fastest speed, so the pair
+            // still reads as one mark rather than two.
+            try? await Task.sleep(for: .milliseconds(55))
+            guard !Task.isCancelled else { return }
+            WKInterfaceDevice.current().play(.click)
+        }
     }
 
     func success() {
@@ -103,6 +118,8 @@ final class FeedbackEngine {
     func cancelPlayback() {
         playbackTask?.cancel()
         playbackTask = nil
+        tailTapTask?.cancel()
+        tailTapTask = nil
         sidetone.keyUp()
         playingCharacter = nil
     }

@@ -25,7 +25,7 @@ struct PhoneticReferenceView: View {
             }
             .listStyle(.plain)
             .listSectionSpacing(4)
-            .environment(\.defaultMinListRowHeight, 36)
+            .environment(\.defaultMinListRowHeight, ReferenceRow.minHeight)
             .scrollContentBackground(.hidden)
             .navigationTitle("Phonetic")
             .navigationBackground(Theme.phonetic)
@@ -58,9 +58,12 @@ struct PhoneticReferenceView: View {
 
                 Spacer(minLength: 0)
             }
+            .frame(maxWidth: .infinity, minHeight: ReferenceRow.minHeight, alignment: .leading)
+            // Without this only the text is hit-testable, not the rest of the row.
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .listRowInsets(.referenceRow)
+        .listRowInsets(ReferenceRow.insets)
         .listRowBackground(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Theme.phonetic.opacity(0.11))

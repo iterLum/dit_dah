@@ -24,12 +24,13 @@ enum Theme {
 
 /// Row metrics for the two reference lists.
 ///
-/// watchOS's default list rows are chunky enough that only two and a half fit on
-/// screen, which is useless for something you look things up in. These bring it
-/// to five or six while staying above the ~34 pt that keeps a row comfortably
-/// tappable.
-extension EdgeInsets {
-    static let referenceRow = EdgeInsets(top: 1, leading: 6, bottom: 1, trailing: 6)
+/// watchOS's default rows are chunky enough that only two and a half fit, which
+/// is useless for something you look things up in. But the first pass at fixing
+/// that overshot: 34 pt is below the ~44 pt minimum that makes a row reliably
+/// hittable with a fingertip. 44 is the floor, and roughly four rows still fit.
+enum ReferenceRow {
+    static let minHeight: CGFloat = 44
+    static let insets = EdgeInsets(top: 2, leading: 6, bottom: 2, trailing: 6)
 }
 
 extension View {
