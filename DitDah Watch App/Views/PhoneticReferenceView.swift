@@ -31,6 +31,9 @@ struct PhoneticReferenceView: View {
             .navigationBackground(Theme.phonetic)
             .tint(Theme.phonetic)
         }
+        // Park the oscillator on arrival so the first tap doesn't pay to tear
+        // the audio engine down before it can speak.
+        .onAppear { feedback.prepareForSpeech() }
     }
 
     private func row(for symbol: Symbol) -> some View {

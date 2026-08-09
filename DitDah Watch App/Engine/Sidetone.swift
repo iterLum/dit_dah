@@ -45,21 +45,20 @@ final class Sidetone {
     /// Any failure here is non-fatal by design: the watch may have no route
     /// available, or the session may be claimed by another app. Sound simply
     /// stays silent and haptics carry the feedback.
+    /// Build the graph if needed and start rendering.
+    ///
+    /// The caller must have activated the audio session already. Session
+    /// ownership lives in `FeedbackEngine` because speech shares the same
+    /// session, and having two owners activate it independently was what made
+    /// the first tap on the phonetic screen hang.
+    ///
+    /// Order still matters inside here: the graph is built only once the
+    /// session is live, because until then the output node reports a
+    /// placeholder format — often 0 Hz and the wrong channel count — and a node
+    /// connected at a format the hardware doesn't use makes the engine hand the
+    /// render block zero-length buffers.
     @discardableResult
-    func activate() -> Bool {
-        // Order matters. The session has to be live *before* the graph is built:
-        // until then the output node reports a placeholder format — often 0 Hz
-        // and the wrong channel count — and a node connected at a format the
-        // hardware doesn't actually use makes the engine hand the render block
-        // zero-length buffers ("mDataByteSize (0) should be non-zero").
-        do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default, options: [])
-            try session.setActive(true)
-        } catch {
-            return false
-        }
-
+    func start() -> Bool {
         if !isConfigured { configure() }
         guard isConfigured else { return false }
 
@@ -71,11 +70,12 @@ final class Sidetone {
         }
     }
 
-    func deactivate() {
+    /// Stop rendering but leave the session alone, so speech can use it without
+    /// the oscillator competing for the same output.
+    func suspend() {
         state.target = 0
         state.amplitude = 0
         if engine.isRunning { engine.pause() }
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     func keyDown() {

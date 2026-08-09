@@ -21,27 +21,68 @@ final class FeedbackEngine {
     private var playbackTask: Task<Void, Never>?
     private var tailTapTask: Task<Void, Never>?
 
+    /// Whether the shared audio session has been activated.
+    ///
+    /// `setActive(true)` is a synchronous call that can block for a noticeable
+    /// stretch. Doing it on every utterance is what made the phonetic screen
+    /// freeze on the first tap and only speak after several more.
+    private var sessionActive = false
+
+    /// Resolving a voice is slow the first time and identical every time after,
+    /// so it is resolved once rather than per utterance.
+    ///
+    /// `@ObservationIgnored` because `@Observable` rewrites stored properties
+    /// into computed ones, and `lazy` isn't allowed on those.
+    @ObservationIgnored private lazy var voice = AVSpeechSynthesisVoice(language: "en-US")
+
     init(preferences: Preferences) {
         self.preferences = preferences
     }
 
     // MARK: - Session
 
+    /// Single owner of the audio session. Both the oscillator and the speech
+    /// synthesiser go through here.
+    @discardableResult
+    private func activateSession() -> Bool {
+        if sessionActive { return true }
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .default, options: [])
+            try session.setActive(true)
+            sessionActive = true
+            return true
+        } catch {
+            return false
+        }
+    }
+
     func activate() {
-        guard preferences.soundEnabled else { return }
-        sidetone.activate()
+        guard preferences.soundEnabled, activateSession() else { return }
+        sidetone.start()
     }
 
     func deactivate() {
         cancelPlayback()
-        sidetone.deactivate()
+        sidetone.suspend()
+        if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        sessionActive = false
+    }
+
+    /// Park the oscillator so the speech synthesiser has the output to itself.
+    /// Called when the phonetic screen appears, so the first tap doesn't pay for
+    /// tearing the engine down.
+    func prepareForSpeech() {
+        cancelPlayback()
+        sidetone.suspend()
     }
 
     // MARK: - Live keying
 
     func keyDown() {
-        guard preferences.soundEnabled else { return }
-        sidetone.activate()
+        guard preferences.soundEnabled, activateSession() else { return }
+        sidetone.start()
         sidetone.keyDown()
     }
 
@@ -133,19 +174,16 @@ final class FeedbackEngine {
     /// words; handing it a respelling makes it sound out the fragments.
     func speak(_ text: String) {
         guard preferences.soundEnabled else { return }
-        do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default, options: [])
-            try session.setActive(true)
-        } catch {
-            return
-        }
+        // The oscillator and the synthesiser share one output. Leaving the
+        // engine rendering while speech starts is what made the first tap stall.
+        sidetone.suspend()
+        guard activateSession() else { return }
 
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }
         let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
+        utterance.voice = voice
         // Default rate. Slowing a single short word down just makes it drawl.
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         synthesizer.speak(utterance)
