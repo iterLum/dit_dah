@@ -14,7 +14,11 @@ struct RootView: View {
 
     var body: some View {
         TabView(selection: $page) {
-            KeyView().tag(Page.key)
+            // A paging TabView keeps adjacent pages alive, so KeyView can't rely
+            // on onDisappear to know it's off screen. Without this it holds
+            // Digital Crown focus while you're reading the reference lists,
+            // which spams "overrelease of detent assertion detected".
+            KeyView(isActive: page == .key).tag(Page.key)
             MorseReferenceView().tag(Page.morse)
             PhoneticReferenceView().tag(Page.phonetic)
         }

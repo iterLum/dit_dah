@@ -70,12 +70,17 @@ final class Sidetone {
         }
     }
 
-    /// Stop rendering but leave the session alone, so speech can use it without
-    /// the oscillator competing for the same output.
+    /// Release the output entirely, leaving the session alone so speech can use
+    /// it without the oscillator competing for the same hardware.
+    ///
+    /// `stop()` rather than `pause()` on purpose: pausing halts rendering but
+    /// keeps the engine's audio units allocated and holding the output, which
+    /// leaves the speech synthesiser contending with a graph that is still
+    /// nominally attached to the hardware.
     func suspend() {
         state.target = 0
         state.amplitude = 0
-        if engine.isRunning { engine.pause() }
+        if engine.isRunning { engine.stop() }
     }
 
     func keyDown() {

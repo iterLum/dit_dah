@@ -3,6 +3,10 @@ import WatchKit
 
 /// Screen 1 — tap the key to send Morse.
 struct KeyView: View {
+    /// Whether this page is the one on screen. Drives crown focus, so the crown
+    /// only steers WPM while you're actually looking at the key.
+    let isActive: Bool
+
     @Environment(Preferences.self) private var preferences
     @Environment(FeedbackEngine.self) private var feedback
     @Environment(KeySession.self) private var session
@@ -67,8 +71,18 @@ struct KeyView: View {
         }
         .onAppear {
             crownWPM = Double(preferences.wpm)
-            crownFocused = true
-            feedback.activate()
+            crownFocused = isActive
+            if isActive { feedback.activate() }
+        }
+        .onChange(of: isActive) { _, active in
+            crownFocused = active
+            if active {
+                crownWPM = Double(preferences.wpm)
+                feedback.activate()
+            } else {
+                // Swiping away mid-press would otherwise strand a held key.
+                session.stop()
+            }
         }
         .onDisappear {
             crownFocused = false
