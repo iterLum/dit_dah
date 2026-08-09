@@ -47,13 +47,23 @@ final class Sidetone {
     /// stays silent and haptics carry the feedback.
     @discardableResult
     func activate() -> Bool {
-        if !isConfigured { configure() }
-        guard isConfigured else { return false }
-
+        // Order matters. The session has to be live *before* the graph is built:
+        // until then the output node reports a placeholder format — often 0 Hz
+        // and the wrong channel count — and a node connected at a format the
+        // hardware doesn't actually use makes the engine hand the render block
+        // zero-length buffers ("mDataByteSize (0) should be non-zero").
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .default, options: [])
             try session.setActive(true)
+        } catch {
+            return false
+        }
+
+        if !isConfigured { configure() }
+        guard isConfigured else { return false }
+
+        do {
             if !engine.isRunning { try engine.start() }
             return true
         } catch {
@@ -77,18 +87,20 @@ final class Sidetone {
     }
 
     private func configure() {
-        let outputFormat = engine.outputNode.inputFormat(forBus: 0)
-        // A stopped engine can report a 0 Hz format; fall back to a sane rate so
-        // the oscillator is never divided by zero.
-        let sampleRate = outputFormat.sampleRate > 0 ? outputFormat.sampleRate : 44_100
+        let hardwareFormat = engine.outputNode.inputFormat(forBus: 0)
+        // Belt and braces: the session is active by now, but never divide by zero.
+        let sampleRate = hardwareFormat.sampleRate > 0 ? hardwareFormat.sampleRate : 44_100
 
         state.phaseIncrement = 2 * .pi * frequency / sampleRate
         state.rampPerSample = Self.peakAmplitude / (Self.rampSeconds * sampleRate)
 
+        // Mono. A sine has no stereo content, and hard-coding two channels was
+        // the other half of the zero-length-buffer bug — the watch speaker isn't
+        // necessarily stereo. Let the main mixer handle any up-mix.
         guard let format = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: sampleRate,
-            channels: 2,
+            channels: 1,
             interleaved: false
         ) else { return }
 
@@ -111,6 +123,11 @@ final class Sidetone {
 
                 for buffer in buffers {
                     guard let data = buffer.mData else { continue }
+                    // Respect the buffer's real capacity rather than trusting
+                    // frameCount. Writing past it would corrupt memory on the
+                    // audio thread, which is not a crash anyone wants to debug.
+                    let capacity = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
+                    guard frame < capacity else { continue }
                     data.assumingMemoryBound(to: Float.self)[frame] = sample
                 }
             }
@@ -119,6 +136,9 @@ final class Sidetone {
 
         engine.attach(node)
         engine.connect(node, to: engine.mainMixerNode, format: format)
+        // Pin the mixer's output to the hardware format too, so the engine never
+        // has to guess at a conversion between the mixer and the speaker.
+        engine.connect(engine.mainMixerNode, to: engine.outputNode, format: hardwareFormat)
         sourceNode = node
         isConfigured = true
     }

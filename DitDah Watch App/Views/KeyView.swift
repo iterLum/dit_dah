@@ -8,6 +8,10 @@ struct KeyView: View {
     @Environment(KeySession.self) private var session
 
     @State private var showingSettings = false
+    /// The crown needs a view that actually holds focus. Without one watchOS
+    /// logs "Crown Sequencer was set up without a view property" and the crown's
+    /// indicator — and sometimes its input — goes to the wrong place.
+    @FocusState private var crownFocused: Bool
     @State private var crownWPM = Double(MorseTiming.defaultWPM)
     @State private var wpmBadgeShown = false
     @State private var badgeTask: Task<Void, Never>?
@@ -44,7 +48,8 @@ struct KeyView: View {
         .overlay(alignment: .top) { wpmBadge }
         .pageBackground(Theme.key)
         .sheet(isPresented: $showingSettings) { SettingsSheet() }
-        .focusable()
+        .focusable(true)
+        .focused($crownFocused)
         .digitalCrownRotation(
             $crownWPM,
             from: Double(MorseTiming.wpmRange.lowerBound),
@@ -62,9 +67,11 @@ struct KeyView: View {
         }
         .onAppear {
             crownWPM = Double(preferences.wpm)
+            crownFocused = true
             feedback.activate()
         }
         .onDisappear {
+            crownFocused = false
             session.stop()
             badgeTask?.cancel()
         }
