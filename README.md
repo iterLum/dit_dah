@@ -104,3 +104,7 @@ DitDah Watch App/
 │   └── Sidetone.swift    The oscillator
 └── Views/                One file per screen, plus Theme and the pattern glyphs
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).
